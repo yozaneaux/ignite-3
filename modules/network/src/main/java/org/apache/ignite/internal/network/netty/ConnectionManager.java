@@ -30,6 +30,8 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
@@ -194,6 +196,8 @@ public class ConnectionManager {
         return sender;
     }
 
+    private ExecutorService svc = Executors.newFixedThreadPool(20);
+
     /**
      * Callback that is called upon receiving a new message.
      *
@@ -201,7 +205,9 @@ public class ConnectionManager {
      * @param message New message.
      */
     private void onMessage(String consistentId, NetworkMessage message) {
-        listeners.forEach(consumer -> consumer.accept(consistentId, message));
+        svc.submit(() -> {
+            listeners.forEach(consumer -> consumer.accept(consistentId, message));
+        });
     }
 
     /**
@@ -269,6 +275,8 @@ public class ConnectionManager {
         } catch (Exception e) {
             LOG.warn("Failed to stop the ConnectionManager: {}", e.getMessage());
         }
+
+        svc.shutdown();
     }
 
     /**
