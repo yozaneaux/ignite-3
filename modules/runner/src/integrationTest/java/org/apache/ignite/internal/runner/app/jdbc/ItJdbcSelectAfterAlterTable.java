@@ -26,7 +26,6 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -57,7 +56,7 @@ public class ItJdbcSelectAfterAlterTable extends AbstractJdbcSelfTest {
      */
     @Test
     public void testSelectAfterAlterTableSingleNode() throws Exception {
-        stmt.executeUpdate("alter table PUBLIC.PERSON add AGE int");
+        stmt.executeUpdate("alter table PUBLIC.PERSON add AGE varchar");
 
         checkNewColumn(stmt);
     }

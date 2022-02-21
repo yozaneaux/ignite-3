@@ -923,7 +923,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     private CompletableFuture<Void> dropTableAsyncInternal(String name) {
         CompletableFuture<Void> dropTblFut = new CompletableFuture<>();
 
-        tableAsync(name).thenAccept(tbl -> {
+        tableAsync0(name).thenAccept(tbl -> {
             // In case of drop it's an optimization that allows not to fire drop-change-closure if there's no such
             // distributed table and the local config has lagged behind.
             if (tbl == null) {
@@ -1105,11 +1105,15 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<Table> tableAsync(String name) {
+        return tableAsync0(IgniteObjectName.parseCanonicalName(name));
+    }
+
+    private CompletableFuture<Table> tableAsync0(String name) {
         if (!busyLock.enterBusy()) {
             throw new IgniteException(new NodeStoppingException());
         }
         try {
-            UUID tableId = directTableId(IgniteObjectName.parseCanonicalName(name));
+            UUID tableId = directTableId(name);
 
             if (tableId == null) {
                 return CompletableFuture.completedFuture(null);

@@ -30,6 +30,7 @@ import java.util.stream.Stream;
 import org.apache.calcite.schema.SchemaPlus;
 import org.apache.calcite.sql.SqlNode;
 import org.apache.calcite.sql.SqlNodeList;
+import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.util.Pair;
 import org.apache.ignite.internal.manager.EventListener;
 import org.apache.ignite.internal.sql.engine.exec.ArrayRowHandler;
@@ -53,6 +54,7 @@ import org.apache.ignite.internal.sql.engine.prepare.QueryPlanCache;
 import org.apache.ignite.internal.sql.engine.prepare.QueryPlanCacheImpl;
 import org.apache.ignite.internal.sql.engine.schema.SqlSchemaManager;
 import org.apache.ignite.internal.sql.engine.schema.SqlSchemaManagerImpl;
+import org.apache.ignite.internal.sql.engine.util.BaseQueryContext;
 import org.apache.ignite.internal.sql.engine.util.Commons;
 import org.apache.ignite.internal.table.distributed.TableManager;
 import org.apache.ignite.internal.table.event.TableEvent;
@@ -250,10 +252,14 @@ public class SqlQueryProcessor implements QueryProcessor {
         QueryPlan plan = planCache.queryPlan(new CacheKey(schema.getName(), sql));
 
         if (plan != null) {
+            QueryCancel queryCancel = new QueryCancel();
+            BaseQueryContext queryContext = createQueryContext(queryCancel, schemaName);
             RootQuery<Object[]> qry = new RootQuery<>(
                     sql,
                     schema,
+                    queryContext,
                     params,
+                    queryCancel,
                     exchangeService,
                     (q) -> queryRegistry.unregister(q.id()),
                     LOG
@@ -287,10 +293,14 @@ public class SqlQueryProcessor implements QueryProcessor {
         List<RootQuery<Object[]>> qrys = new ArrayList<>(qryList.size());
 
         for (final SqlNode sqlNode : qryList) {
+            QueryCancel queryCancel = new QueryCancel();
+            BaseQueryContext queryContext = createQueryContext(queryCancel, schemaName);
             RootQuery<Object[]> qry = new RootQuery<>(
                     sqlNode.toString(),
                     schemaManager.schema(schemaName), // Update schema for each query in multiple statements.
+                    queryContext,
                     params,
+                    queryCancel,
                     exchangeService,
                     (q) -> queryRegistry.unregister(q.id()),
                     LOG
@@ -326,6 +336,19 @@ public class SqlQueryProcessor implements QueryProcessor {
         }
 
         return cursors;
+    }
+
+    private BaseQueryContext createQueryContext(QueryCancel cancel, @Nullable String schema) {
+        return BaseQueryContext.builder()
+            .frameworkConfig(
+                Frameworks.newConfigBuilder(FRAMEWORK_CONFIG)
+                    .defaultSchema(schemaManager.schema(schema))
+                    .build()
+            )
+            .logger(LOG)
+            .cancel(cancel)
+            .extensions(extensions)
+            .build();
     }
 
     private abstract static class AbstractTableEventListener implements EventListener<TableEventParameters> {

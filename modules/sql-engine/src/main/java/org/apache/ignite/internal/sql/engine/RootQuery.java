@@ -17,7 +17,6 @@
 
 package org.apache.ignite.internal.sql.engine;
 
-import static org.apache.ignite.internal.sql.engine.util.Commons.FRAMEWORK_CONFIG;
 import static org.apache.ignite.internal.util.CollectionUtils.nullOrEmpty;
 
 import java.util.HashSet;
@@ -28,7 +27,6 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import org.apache.calcite.schema.SchemaPlus;
-import org.apache.calcite.tools.Frameworks;
 import org.apache.calcite.util.CancelFlag;
 import org.apache.ignite.internal.sql.engine.exec.ExchangeService;
 import org.apache.ignite.internal.sql.engine.exec.ExecutionContext;
@@ -68,18 +66,20 @@ public class RootQuery<RowT> extends Query<RowT> {
     public RootQuery(
             String sql,
             SchemaPlus schema,
+            BaseQueryContext ctx,
             Object[] params,
             ExchangeService exch,
             Consumer<Query<RowT>> unregister,
             IgniteLogger log
     ) {
-        this(sql, schema, params, new QueryCancel(), exch, unregister, log);
+        this(sql, schema, ctx, params, new QueryCancel(), exch, unregister, log);
     }
 
     /** Creates the object. */
     public RootQuery(
             String sql,
             SchemaPlus schema,
+            BaseQueryContext ctx,
             Object[] params,
             QueryCancel cancel,
             ExchangeService exch,
@@ -101,15 +101,7 @@ public class RootQuery<RowT> extends Query<RowT> {
         remotes = new HashSet<>();
         waiting = new HashSet<>();
 
-        ctx = BaseQueryContext.builder()
-                .cancel(cancel)
-                .frameworkConfig(
-                        Frameworks.newConfigBuilder(FRAMEWORK_CONFIG)
-                                .defaultSchema(schema)
-                                .build()
-                )
-                .logger(log)
-                .build();
+        this.ctx = ctx;
     }
 
     /**
@@ -119,7 +111,8 @@ public class RootQuery<RowT> extends Query<RowT> {
      * @param schema new schema.
      */
     public RootQuery<RowT> childQuery(SchemaPlus schema) {
-        return new RootQuery<>(sql, schema, params, cancel, exchangeService, unregister, log);
+//        return new RootQuery<>(sql, schema, params, cancel, exchangeService, unregister, log);
+        return null;
     }
 
     public BaseQueryContext context() {
