@@ -19,6 +19,9 @@ package org.apache.ignite.internal.sql.engine;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadInfo;
+import java.lang.management.ThreadMXBean;
 import java.util.List;
 import org.apache.ignite.internal.schema.configuration.SchemaConfigurationConverter;
 import org.apache.ignite.schema.SchemaBuilders;
@@ -28,13 +31,12 @@ import org.apache.ignite.table.RecordView;
 import org.apache.ignite.table.Table;
 import org.apache.ignite.table.Tuple;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
  * Sort aggregate integration test.
  */
-@Disabled("https://issues.apache.org/jira/browse/IGNITE-15655")
+//@Disabled("https://issues.apache.org/jira/browse/IGNITE-15655")
 public class ItSortAggregateTest extends AbstractBasicIntegrationTest {
     public static final int ROWS = 103;
 
@@ -75,7 +77,7 @@ public class ItSortAggregateTest extends AbstractBasicIntegrationTest {
 
         Table table = CLUSTER_NODES.get(0).tables().createTable(schTbl1.canonicalName(), tblCh ->
                 SchemaConfigurationConverter.convert(schTbl1, tblCh)
-                        .changeReplicas(2)
+                        .changeReplicas(1)
                         .changePartitions(10)
         );
 
@@ -85,15 +87,20 @@ public class ItSortAggregateTest extends AbstractBasicIntegrationTest {
 
         RecordView<Tuple> view = table.recordView();
         for (int i = 0; i < ROWS; i++) {
-            view.insert(
-                    null,
-                    Tuple.create()
+            try {
+                view.insert(
+                        null,
+                        Tuple.create()
                             .set("ID", i)
                             .set("GRP0", i / 10)
                             .set("GRP1", i / 100)
                             .set("VAL0", 1)
                             .set("VAL1", 2)
-            );
+                );
+            } catch (Exception e) {
+                dumpThreads();
+                throw e;
+            }
         }
 
         RecordView<Tuple> view1 = tblOneColIdx.recordView();
@@ -131,5 +138,17 @@ public class ItSortAggregateTest extends AbstractBasicIntegrationTest {
         List<List<?>> cursors = sql("SELECT PK FROM TEST_ONE_COL_IDX WHERE col0 IN (SELECT col0 FROM TEST_ONE_COL_IDX)");
 
         assertEquals(ROWS, cursors.size());
+    }
+
+    /**
+     * Dump JVM threads.
+     */
+    public static void dumpThreads() {
+        ThreadMXBean bean = ManagementFactory.getThreadMXBean();
+        ThreadInfo[] infos = bean.dumpAllThreads(true, true);
+
+        for (ThreadInfo info : infos) {
+            System.out.println(info);
+        }
     }
 }
