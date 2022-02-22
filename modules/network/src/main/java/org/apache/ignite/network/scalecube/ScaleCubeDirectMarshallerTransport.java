@@ -25,8 +25,6 @@ import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.Map;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import org.apache.ignite.internal.network.NetworkMessagesFactory;
 import org.apache.ignite.internal.network.message.ScaleCubeMessage;
 import org.apache.ignite.internal.network.message.ScaleCubeMessageBuilder;
@@ -155,7 +153,6 @@ class ScaleCubeDirectMarshallerTransport implements Transport {
     /** {@inheritDoc} */
     @Override
     public Mono<Void> stop() {
-        svc.shutdown();
         return Mono.defer(() -> {
             stop.onComplete();
             return onStop;
@@ -181,8 +178,6 @@ class ScaleCubeDirectMarshallerTransport implements Transport {
             return connectionManager.channel(consistentId, addr).thenCompose(client -> client.send(fromMessage(message)));
         });
     }
-
-    private final ExecutorService svc = Executors.newSingleThreadExecutor();
 
     /**
      * Handles new network messages from {@link #connectionManager}.

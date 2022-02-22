@@ -156,13 +156,13 @@ public class ScaleCubeClusterServiceFactory {
                     throw new IgniteInternalException("Timeout while waiting for the ClusterService to stop", e);
                 } catch (ExecutionException e) {
                     throw new IgniteInternalException("Unable to stop the ClusterService", e.getCause());
+                } finally {
+                    connectionMgr.stop();
+
+                    // Messaging service checks connection manager's status before sending a message, so connection manager should be
+                    // stopped before messaging service
+                    messagingService.stop();
                 }
-
-                connectionMgr.stop();
-
-                // Messaging service checks connection manager's status before sending a message, so connection manager should be
-                // stopped before messaging service
-                messagingService.stop();
             }
 
             /** {@inheritDoc} */
