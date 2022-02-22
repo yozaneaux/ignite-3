@@ -168,6 +168,7 @@ public class ConnectionManager {
      * @return Sender.
      */
     public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address) {
+        LOG.info("Requesting channel=" + consistentId + " address=" + address);
         if (consistentId != null) {
             // If consistent id is known, try looking up a channel by consistent id. There can be an outbound connection
             // or an inbound connection associated with that consistent id.
@@ -205,6 +206,7 @@ public class ConnectionManager {
      * @param message New message.
      */
     private void onMessage(String consistentId, NetworkMessage message) {
+        LOG.info("Received " + message.getClass() + " from=" + consistentId);
         svc.submit(() -> {
             listeners.forEach(consumer -> consumer.accept(consistentId, message));
         });

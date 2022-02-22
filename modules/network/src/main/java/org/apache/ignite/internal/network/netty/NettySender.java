@@ -21,6 +21,7 @@ import io.netty.channel.Channel;
 import io.netty.handler.stream.ChunkedInput;
 import java.util.concurrent.CompletableFuture;
 import org.apache.ignite.internal.network.direct.DirectMessageWriter;
+import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.NetworkMessage;
 import org.jetbrains.annotations.TestOnly;
 
@@ -28,6 +29,9 @@ import org.jetbrains.annotations.TestOnly;
  * Wrapper for a Netty {@link Channel}, that uses {@link ChunkedInput} and {@link DirectMessageWriter} to send data.
  */
 public class NettySender {
+    /** Logger. */
+    private static final IgniteLogger LOG = IgniteLogger.forClass(NettySender.class);
+
     /** Netty channel. */
     private final Channel channel;
 
@@ -57,6 +61,7 @@ public class NettySender {
      * @return Future of the send operation.
      */
     public CompletableFuture<Void> send(NetworkMessage msg) {
+        LOG.info("Sending " + msg.getClass());
         return NettyUtils.toCompletableFuture(channel.writeAndFlush(msg));
     }
 
