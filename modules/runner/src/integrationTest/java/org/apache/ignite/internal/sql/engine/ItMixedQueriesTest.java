@@ -259,7 +259,7 @@ public class ItMixedQueriesTest extends AbstractBasicIntegrationTest {
 
     /** Quantified predicates test. */
     @Test
-    public void quantifiedCompTest() throws InterruptedException {
+    public void testQuantifiedComp() throws InterruptedException {
         assertQuery("select salary from emp2 where salary > SOME (10, 11) ORDER BY salary")
                 .returns(11d)
                 .returns(12d)
