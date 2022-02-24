@@ -111,8 +111,7 @@ public class RootQuery<RowT> extends Query<RowT> {
      * @param schema new schema.
      */
     public RootQuery<RowT> childQuery(SchemaPlus schema) {
-//        return new RootQuery<>(sql, schema, params, cancel, exchangeService, unregister, log);
-        return null;
+        return new RootQuery<>(sql, schema, ctx, params, cancel, exchangeService, unregister, log);
     }
 
     public BaseQueryContext context() {

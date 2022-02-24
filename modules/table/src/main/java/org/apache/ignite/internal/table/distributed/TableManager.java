@@ -54,6 +54,7 @@ import org.apache.ignite.configuration.schemas.table.TablesConfiguration;
 import org.apache.ignite.configuration.validation.ConfigurationValidationException;
 import org.apache.ignite.internal.affinity.AffinityUtils;
 import org.apache.ignite.internal.baseline.BaselineManager;
+import org.apache.ignite.internal.configuration.direct.DirectConfigurationProxy;
 import org.apache.ignite.internal.configuration.schema.ExtendedTableChange;
 import org.apache.ignite.internal.configuration.schema.ExtendedTableConfiguration;
 import org.apache.ignite.internal.configuration.schema.ExtendedTableView;
@@ -1018,7 +1019,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      * Collects a list of direct table ids.
      *
      * @return A list of direct table ids.
-     * @see DirectConfigurationProperty
+     * @see DirectConfigurationProxy
      */
     private List<UUID> directTableIds() {
         NamedListView<TableView> views = directProxy(tablesCfg.tables()).value();
@@ -1039,7 +1040,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
      *
      * @param tblName Name of the table.
      * @return Direct id of the table, or {@code null} if the table with the {@code tblName} has not been found.
-     * @see DirectConfigurationProperty
+     * @see DirectConfigurationProxy
      */
     @Nullable
     private UUID directTableId(String tblName) {
@@ -1105,24 +1106,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
     /** {@inheritDoc} */
     @Override
     public CompletableFuture<Table> tableAsync(String name) {
-        return tableAsync0(IgniteObjectName.parseCanonicalName(name));
-    }
-
-    private CompletableFuture<Table> tableAsync0(String name) {
-        if (!busyLock.enterBusy()) {
-            throw new IgniteException(new NodeStoppingException());
-        }
-        try {
-            UUID tableId = directTableId(name);
-
-            if (tableId == null) {
-                return CompletableFuture.completedFuture(null);
-            }
-
-            return (CompletableFuture) tableAsyncInternal(tableId, false);
-        } finally {
-            busyLock.leaveBusy();
-        }
+        return (CompletableFuture) tableAsync0(IgniteObjectName.parseCanonicalName(name));
     }
 
     /** {@inheritDoc} */
@@ -1133,6 +1117,23 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
         }
         try {
             return tableAsyncInternal(id, true);
+        } finally {
+            busyLock.leaveBusy();
+        }
+    }
+
+    private CompletableFuture<TableImpl> tableAsync0(String name) {
+        if (!busyLock.enterBusy()) {
+            throw new IgniteException(new NodeStoppingException());
+        }
+        try {
+            UUID tableId = directTableId(name);
+
+            if (tableId == null) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            return tableAsyncInternal(tableId, false);
         } finally {
             busyLock.leaveBusy();
         }
