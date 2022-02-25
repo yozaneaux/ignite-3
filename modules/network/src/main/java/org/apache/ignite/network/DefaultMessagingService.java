@@ -158,7 +158,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         String recipientConsistentId = recipient != null ? recipient.name() : address.consistentId();
 
-        return connectionManager.channel(recipientConsistentId, addr).thenCompose(sender -> sender.send(message));
+        return connectionManager.channel(recipientConsistentId, addr, msg.groupType()).thenCompose(sender -> sender.send(message));
     }
 
     /**
@@ -194,7 +194,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         String recipientConsistentId = recipient != null ? recipient.name() : addr.consistentId();
 
-        return connectionManager.channel(recipientConsistentId, address).thenCompose(sender -> sender.send(message))
+        return connectionManager.channel(recipientConsistentId, address, msg.groupType()).thenCompose(sender -> sender.send(message))
                 .thenCompose(unused -> responseFuture);
     }
 

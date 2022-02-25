@@ -26,6 +26,8 @@ import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -35,6 +37,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.apache.ignite.configuration.schemas.network.NetworkView;
 import org.apache.ignite.configuration.schemas.network.OutboundView;
@@ -64,10 +67,10 @@ public class ConnectionManager {
     private final NettyServer server;
 
     /** Channels map from consistentId to {@link NettySender}. */
-    private final Map<String, NettySender> channels = new ConcurrentHashMap<>();
+    private final Map<ChannelKey, NettySender> channels = new ConcurrentHashMap<>();
 
     /** Clients. */
-    private final Map<SocketAddress, NettyClient> clients = new ConcurrentHashMap<>();
+    private final Map<ClientKey, NettyClient> clients = new ConcurrentHashMap<>();
 
     /** Serialization service. */
     private final SerializationService serializationService;
@@ -140,7 +143,7 @@ public class ConnectionManager {
 
             server.start().get();
 
-            LOG.info("Connection created [address=" + server.address() + ']');
+            // LOG.info("Connection created [address=" + server.address() + ']');
         } catch (ExecutionException e) {
             Throwable cause = e.getCause();
             throw new IgniteInternalException("Failed to start the connection manager: " + cause.getMessage(), cause);
@@ -160,6 +163,10 @@ public class ConnectionManager {
         return server.address();
     }
 
+    public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address) {
+        return channel(consistentId, address, 0);
+    }
+
     /**
      * Gets a {@link NettySender}, that sends data from this node to another node with the specified address.
      *
@@ -167,13 +174,14 @@ public class ConnectionManager {
      * @param address      Another node's address.
      * @return Sender.
      */
-    public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address) {
-        LOG.info("Requesting channel=" + consistentId + " address=" + address);
+    public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address, int messageType) {
+        // LOG.info("Requesting channel=" + consistentId + " address=" + address);
         if (consistentId != null) {
             // If consistent id is known, try looking up a channel by consistent id. There can be an outbound connection
             // or an inbound connection associated with that consistent id.
+            var key = new ChannelKey(consistentId, messageType);
             NettySender channel = channels.compute(
-                    consistentId,
+                    key,
                     (addr, sender) -> (sender == null || !sender.isOpen()) ? null : sender
             );
 
@@ -185,7 +193,8 @@ public class ConnectionManager {
         // Get an existing client or create a new one. NettyClient provides a CompletableFuture that resolves
         // when the client is ready for write operations, so previously started client, that didn't establish connection
         // or didn't perform the handhsake operaton, can be reused.
-        NettyClient client = clients.compute(address, (addr, existingClient) ->
+        ClientKey clientKey = new ClientKey(address, messageType);
+        NettyClient client = clients.compute(clientKey, (addr, existingClient) ->
                 existingClient != null && !existingClient.failedToConnect() && !existingClient.isDisconnected()
                         ? existingClient : connect(addr)
         );
@@ -197,6 +206,62 @@ public class ConnectionManager {
         return sender;
     }
 
+    private static class ClientKey {
+        private final SocketAddress address;
+
+        private final int msgGroup;
+
+        private ClientKey(SocketAddress address, int msgGroup) {
+            this.address = address;
+            this.msgGroup = msgGroup;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            ClientKey clientKey = (ClientKey) o;
+            return msgGroup == clientKey.msgGroup && Objects.equals(address, clientKey.address);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(address, msgGroup);
+        }
+    }
+
+    private static class ChannelKey {
+        private final String consistentId;
+
+        private final int msgGroup;
+
+        private ChannelKey(String consistentId, int msgGroup) {
+            this.consistentId = consistentId;
+            this.msgGroup = msgGroup;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) {
+                return true;
+            }
+            if (o == null || getClass() != o.getClass()) {
+                return false;
+            }
+            ChannelKey that = (ChannelKey) o;
+            return msgGroup == that.msgGroup && Objects.equals(consistentId, that.consistentId);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(consistentId, msgGroup);
+        }
+    }
+
     private ExecutorService svc = Executors.newFixedThreadPool(20);
 
     /**
@@ -206,7 +271,7 @@ public class ConnectionManager {
      * @param message New message.
      */
     private void onMessage(String consistentId, NetworkMessage message) {
-        LOG.info("Received " + message.getClass() + " from=" + consistentId);
+        // LOG.info("Received " + message.getClass() + " from=" + consistentId);
         svc.submit(() -> {
             listeners.forEach(consumer -> consumer.accept(consistentId, message));
         });
@@ -218,18 +283,18 @@ public class ConnectionManager {
      * @param channel Channel from client to this {@link #server}.
      */
     private void onNewIncomingChannel(NettySender channel) {
-        channels.put(channel.consistentId(), channel);
+        // channels.put(channel.consistentId(), channel);
     }
 
     /**
      * Create new client from this node to specified address.
      *
-     * @param address Target address.
+     * @param key Client key.
      * @return New netty client.
      */
-    private NettyClient connect(SocketAddress address) {
+    private NettyClient connect(ClientKey key) {
         var client = new NettyClient(
-                address,
+                key.address,
                 serializationService,
                 clientHandshakeManagerFactory.get(),
                 this::onMessage
@@ -237,9 +302,9 @@ public class ConnectionManager {
 
         client.start(clientBootstrap).whenComplete((sender, throwable) -> {
             if (throwable == null) {
-                channels.put(sender.consistentId(), sender);
+                channels.put(new ChannelKey(sender.consistentId(), key.msgGroup), sender);
             } else {
-                clients.remove(address);
+                clients.remove(key.address);
             }
         });
 
@@ -328,7 +393,7 @@ public class ConnectionManager {
      */
     @TestOnly
     public Map<String, NettySender> channels() {
-        return Collections.unmodifiableMap(channels);
+        return channels.entrySet().stream().collect(Collectors.toMap(k -> k.getKey().consistentId, Entry::getValue));
     }
 
     /**
