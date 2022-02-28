@@ -106,14 +106,20 @@ public abstract class AbstractClientService implements ClientService, TopologyEv
 
     @Override
     public boolean connect(final Endpoint endpoint) {
-        try {
-            return connectAsync(endpoint).get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-    
-            LOG.error("Interrupted while connecting to {}, exception: {}.", endpoint, e.getMessage());
-        } catch (ExecutionException e) {
-            LOG.error("Fail to connect {}, exception: {}.", endpoint, e.getMessage());
+        for (int i = 0; i < 10; i++) {
+            try {
+                Boolean connectResult = connectAsync(endpoint).get();
+
+                if (connectResult) {
+                    return true;
+                }
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+
+                LOG.error("Interrupted while connecting to {}, exception: {}.", endpoint, e.getMessage());
+            } catch (ExecutionException e) {
+                LOG.error("Fail to connect {}, exception: {}.", endpoint, e.getMessage());
+            }
         }
         
         return false;
