@@ -33,13 +33,13 @@ import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 import org.apache.ignite.internal.util.IgniteUtils;
-import org.apache.ignite.raft.jraft.util.ExponentialBackoffTimeoutStrategy;
 import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.ClusterService;
 import org.apache.ignite.network.NetworkAddress;
@@ -60,6 +60,7 @@ import org.apache.ignite.raft.jraft.storage.SnapshotThrottle;
 import org.apache.ignite.raft.jraft.test.TestUtils;
 import org.apache.ignite.raft.jraft.util.Endpoint;
 import org.apache.ignite.raft.jraft.util.ExecutorServiceHelper;
+import org.apache.ignite.raft.jraft.util.ExponentialBackoffTimeoutStrategy;
 import org.apache.ignite.raft.jraft.util.Utils;
 import org.apache.ignite.utils.ClusterServiceTestUtils;
 import org.jetbrains.annotations.Nullable;
@@ -83,6 +84,7 @@ public class TestCluster {
     private final List<PeerId> peers;
     private final List<NodeImpl> nodes;
     private final LinkedHashMap<PeerId, MockStateMachine> fsms;
+    private final AtomicInteger startedNodes = new AtomicInteger();
     private final ConcurrentMap<Endpoint, RaftGroupService> serverMap = new ConcurrentHashMap<>();
     private final int electionTimeoutMs;
     private final Lock lock = new ReentrantLock();
@@ -267,6 +269,10 @@ public class TestCluster {
 
             clusterService.start();
 
+            int count = startedNodes.incrementAndGet();
+
+            TestUtils.waitForTopology(clusterService, count, 3000);
+
             if (optsClo != null)
                 optsClo.accept(nodeOptions);
 
@@ -342,6 +348,7 @@ public class TestCluster {
         removeNode(listenAddr);
         RaftGroupService raftGroupService = this.serverMap.remove(listenAddr);
         raftGroupService.shutdown();
+        startedNodes.decrementAndGet();
         return true;
     }
 
