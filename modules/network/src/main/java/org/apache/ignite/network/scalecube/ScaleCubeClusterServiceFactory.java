@@ -104,31 +104,32 @@ public class ScaleCubeClusterServiceFactory {
                         nettyBootstrapFactory
                 );
 
-                var transport = new ScaleCubeDirectMarshallerTransport(connectionMgr, topologyService, messageFactory);
+                connectionMgr.start();
+
+                // resolve cyclic dependencies
+                messagingService.setConnectionManager(connectionMgr);
+
+                var transport = new ScaleCubeDirectMarshallerTransport(connectionMgr.getLocalAddress(), messagingService, topologyService, messageFactory);
 
                 NodeFinder finder = NodeFinderFactory.createNodeFinder(configView.nodeFinder());
 
                 cluster = new ClusterImpl(clusterConfig(configView.membership()))
-                        .handler(cl -> new ClusterMessageHandler() {
-                            /** {@inheritDoc} */
-                            @Override
-                            public void onMembershipEvent(MembershipEvent event) {
-                                topologyService.onMembershipEvent(event);
-                            }
-                        })
-                        .config(opts -> opts.memberAlias(consistentId))
-                        .transport(opts -> opts.transportFactory(transportConfig -> transport))
-                        .membership(opts -> opts.seedMembers(parseAddresses(finder.findNodes())));
+                    .handler(cl -> new ClusterMessageHandler() {
+                        /** {@inheritDoc} */
+                        @Override
+                        public void onMembershipEvent(MembershipEvent event) {
+                            topologyService.onMembershipEvent(event);
+                        }
+                    })
+                    .config(opts -> opts.memberAlias(consistentId))
+                    .transport(opts -> opts.transportFactory(transportConfig -> transport))
+                    .membership(opts -> opts.seedMembers(parseAddresses(finder.findNodes())));
 
                 shutdownFuture = cluster.onShutdown().toFuture();
 
-                connectionMgr.start();
-
-                // resolve cyclic dependencies
-                topologyService.setCluster(cluster);
-                messagingService.setConnectionManager(connectionMgr);
-
                 cluster.startAwait();
+
+                topologyService.setCluster(cluster);
 
                 // emit an artificial event as if the local member has joined the topology (ScaleCube doesn't do that)
                 var localMembershipEvent = MembershipEvent.createAdded(cluster.member(), null, System.currentTimeMillis());

@@ -31,7 +31,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.ignite.internal.network.NetworkMessagesFactory;
 import org.apache.ignite.internal.network.message.InvokeRequest;
 import org.apache.ignite.internal.network.message.InvokeResponse;
-import org.apache.ignite.internal.network.message.ScaleCubeMessage;
+import org.apache.ignite.internal.network.netty.CommunicationHandler;
 import org.apache.ignite.internal.network.netty.ConnectionManager;
 import org.apache.ignite.internal.network.netty.NettySender;
 import org.apache.ignite.lang.NodeStoppingException;
@@ -46,7 +46,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
     private final TopologyService topologyService;
 
     /** Connection manager that provides access to {@link NettySender}. */
-    private volatile ConnectionManager connectionManager;
+    private volatile CommunicationHandler connectionManager;
 
     /**
      * This node's local socket address. Not volatile, because access is guarded by volatile reads/writes to the {@code connectionManager}
@@ -84,7 +84,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
      */
     public void setConnectionManager(ConnectionManager connectionManager) {
         this.localAddress = (InetSocketAddress) connectionManager.getLocalAddress();
-        this.connectionManager = connectionManager;
+        this.connectionManager = new CommunicationHandler(connectionManager);
         connectionManager.addListener(this::onMessage);
     }
 
@@ -158,7 +158,9 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         String recipientConsistentId = recipient != null ? recipient.name() : address.consistentId();
 
-        return connectionManager.channel(recipientConsistentId, addr, msg.groupType()).thenCompose(sender -> sender.send(message));
+        return connectionManager.communication(recipientConsistentId, addr).thenCompose(communication -> {
+            return communication.sendAndRelease(message);
+        });
     }
 
     /**
@@ -194,7 +196,7 @@ public class DefaultMessagingService extends AbstractMessagingService {
 
         String recipientConsistentId = recipient != null ? recipient.name() : addr.consistentId();
 
-        return connectionManager.channel(recipientConsistentId, address, msg.groupType()).thenCompose(sender -> sender.send(message))
+        return connectionManager.communication(recipientConsistentId, address).thenCompose(sender -> sender.sendAndRelease(message))
                 .thenCompose(unused -> responseFuture);
     }
 
@@ -219,11 +221,6 @@ public class DefaultMessagingService extends AbstractMessagingService {
      * @param msg Incoming message.
      */
     private void onMessage(String consistentId, NetworkMessage msg) {
-        if (msg instanceof ScaleCubeMessage) {
-            // ScaleCube messages are handled in the ScaleCubeTransport
-            return;
-        }
-
         if (msg instanceof InvokeResponse) {
             InvokeResponse response = (InvokeResponse) msg;
             onInvokeResponse(response.message(), response.correlationId());

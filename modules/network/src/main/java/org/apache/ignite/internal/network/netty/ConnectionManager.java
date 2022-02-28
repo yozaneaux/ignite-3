@@ -18,18 +18,9 @@
 package org.apache.ignite.internal.network.netty;
 
 import io.netty.bootstrap.Bootstrap;
-import io.netty.channel.ChannelOption;
-import io.netty.channel.EventLoopGroup;
-import io.netty.channel.socket.nio.NioSocketChannel;
 import java.net.SocketAddress;
-import java.util.Collection;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
@@ -37,17 +28,13 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
 import org.apache.ignite.configuration.schemas.network.NetworkView;
-import org.apache.ignite.configuration.schemas.network.OutboundView;
 import org.apache.ignite.internal.network.handshake.HandshakeManager;
 import org.apache.ignite.internal.network.serialization.SerializationService;
 import org.apache.ignite.lang.IgniteInternalException;
 import org.apache.ignite.lang.IgniteLogger;
 import org.apache.ignite.network.NettyBootstrapFactory;
 import org.apache.ignite.network.NetworkMessage;
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.annotations.TestOnly;
 
 /**
@@ -65,12 +52,6 @@ public class ConnectionManager {
 
     /** Server. */
     private final NettyServer server;
-
-    /** Channels map from consistentId to {@link NettySender}. */
-    private final Map<ChannelKey, NettySender> channels = new ConcurrentHashMap<>();
-
-    /** Clients. */
-    private final Map<ClientKey, NettyClient> clients = new ConcurrentHashMap<>();
 
     /** Serialization service. */
     private final SerializationService serializationService;
@@ -163,104 +144,6 @@ public class ConnectionManager {
         return server.address();
     }
 
-    public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address) {
-        return channel(consistentId, address, 0);
-    }
-
-    /**
-     * Gets a {@link NettySender}, that sends data from this node to another node with the specified address.
-     *
-     * @param consistentId Another node's consistent id.
-     * @param address      Another node's address.
-     * @return Sender.
-     */
-    public CompletableFuture<NettySender> channel(@Nullable String consistentId, SocketAddress address, int messageType) {
-        // LOG.info("Requesting channel=" + consistentId + " address=" + address);
-        if (consistentId != null) {
-            // If consistent id is known, try looking up a channel by consistent id. There can be an outbound connection
-            // or an inbound connection associated with that consistent id.
-            var key = new ChannelKey(consistentId, messageType);
-            NettySender channel = channels.compute(
-                    key,
-                    (addr, sender) -> (sender == null || !sender.isOpen()) ? null : sender
-            );
-
-            if (channel != null) {
-                return CompletableFuture.completedFuture(channel);
-            }
-        }
-
-        // Get an existing client or create a new one. NettyClient provides a CompletableFuture that resolves
-        // when the client is ready for write operations, so previously started client, that didn't establish connection
-        // or didn't perform the handhsake operaton, can be reused.
-        ClientKey clientKey = new ClientKey(address, messageType);
-        NettyClient client = clients.compute(clientKey, (addr, existingClient) ->
-                existingClient != null && !existingClient.failedToConnect() && !existingClient.isDisconnected()
-                        ? existingClient : connect(addr)
-        );
-
-        CompletableFuture<NettySender> sender = client.sender();
-
-        assert sender != null;
-
-        return sender;
-    }
-
-    private static class ClientKey {
-        private final SocketAddress address;
-
-        private final int msgGroup;
-
-        private ClientKey(SocketAddress address, int msgGroup) {
-            this.address = address;
-            this.msgGroup = msgGroup;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            ClientKey clientKey = (ClientKey) o;
-            return msgGroup == clientKey.msgGroup && Objects.equals(address, clientKey.address);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(address, msgGroup);
-        }
-    }
-
-    private static class ChannelKey {
-        private final String consistentId;
-
-        private final int msgGroup;
-
-        private ChannelKey(String consistentId, int msgGroup) {
-            this.consistentId = consistentId;
-            this.msgGroup = msgGroup;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) {
-                return true;
-            }
-            if (o == null || getClass() != o.getClass()) {
-                return false;
-            }
-            ChannelKey that = (ChannelKey) o;
-            return msgGroup == that.msgGroup && Objects.equals(consistentId, that.consistentId);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(consistentId, msgGroup);
-        }
-    }
 
     private ExecutorService svc = Executors.newFixedThreadPool(20);
 
@@ -292,23 +175,15 @@ public class ConnectionManager {
      * @param key Client key.
      * @return New netty client.
      */
-    private NettyClient connect(ClientKey key) {
+    public CompletableFuture<NettySender> connect(SocketAddress address) {
         var client = new NettyClient(
-                key.address,
+                address,
                 serializationService,
                 clientHandshakeManagerFactory.get(),
                 this::onMessage
         );
 
-        client.start(clientBootstrap).whenComplete((sender, throwable) -> {
-            if (throwable == null) {
-                channels.put(new ChannelKey(sender.consistentId(), key.msgGroup), sender);
-            } else {
-                clients.remove(key.address);
-            }
-        });
-
-        return client;
+        return client.start(clientBootstrap);
     }
 
     /**
@@ -330,15 +205,8 @@ public class ConnectionManager {
             return;
         }
 
-        Stream<CompletableFuture<Void>> stream = Stream.concat(
-                clients.values().stream().map(NettyClient::stop),
-                Stream.of(server.stop())
-        );
-
-        CompletableFuture<Void> stopFut = CompletableFuture.allOf(stream.toArray(CompletableFuture<?>[]::new));
-
         try {
-            stopFut.join();
+            server.stop().join();
         } catch (Exception e) {
             LOG.warn("Failed to stop the ConnectionManager: {}", e.getMessage());
         }
@@ -373,49 +241,5 @@ public class ConnectionManager {
     @TestOnly
     public String consistentId() {
         return consistentId;
-    }
-
-    /**
-     * Returns collection of all the clients started by this connection manager.
-     *
-     * @return Collection of all the clients started by this connection manager.
-     */
-    @TestOnly
-    public Collection<NettyClient> clients() {
-        return Collections.unmodifiableCollection(clients.values());
-    }
-
-
-    /**
-     * Returns map of the channels.
-     *
-     * @return Map of the channels.
-     */
-    @TestOnly
-    public Map<String, NettySender> channels() {
-        return channels.entrySet().stream().collect(Collectors.toMap(k -> k.getKey().consistentId, Entry::getValue));
-    }
-
-    /**
-     * Creates a {@link Bootstrap} for clients with channel options provided by a {@link OutboundView}.
-     *
-     * @param eventLoopGroup      Event loop group for channel handling.
-     * @param clientConfiguration Client configuration.
-     * @return Bootstrap for clients.
-     */
-    public static Bootstrap createClientBootstrap(
-            EventLoopGroup eventLoopGroup,
-            OutboundView clientConfiguration
-    ) {
-        Bootstrap clientBootstrap = new Bootstrap();
-
-        clientBootstrap.group(eventLoopGroup)
-                .channel(NioSocketChannel.class)
-                // See NettyServer#start for netty configuration details.
-                .option(ChannelOption.SO_KEEPALIVE, clientConfiguration.soKeepAlive())
-                .option(ChannelOption.SO_LINGER, clientConfiguration.soLinger())
-                .option(ChannelOption.TCP_NODELAY, clientConfiguration.tcpNoDelay());
-
-        return clientBootstrap;
     }
 }
