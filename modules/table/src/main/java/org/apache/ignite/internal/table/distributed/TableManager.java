@@ -238,7 +238,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
                         assert ((ExtendedTableView) ctx.newValue()).assignments() != null :
                                 IgniteStringFormatter.format("Table [id={}, name={}] has empty assignments.", tblId, tblName);
 
-                        // TODO: IGNITE-16369 Listener with any placeholder should be used instead.
+                        // TODO: <MUTED> IGNITE-16369 Listener with any placeholder should be used instead.
                         ((ExtendedTableConfiguration) tablesCfg.tables().get(tblName)).schemas()
                                 .listenElements(new ConfigurationNamedListListener<>() {
                                     @Override
@@ -257,7 +257,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                                         try {
                                             // Avoid calling listener immediately after the listener completes to create the current table.
-                                            // FIXME: https://issues.apache.org/jira/browse/IGNITE-16369
+                                            // FIXME: <MUTED> https://issues.apache.org/jira/browse/IGNITE-16369
                                             if (ctx.storageRevision() != schemasCtx.storageRevision()) {
                                                 return tablesByIdVv.get(causalityToken).thenAccept(tablesById -> {
                                                     TableImpl table = tablesById.get(tblId);
@@ -293,7 +293,7 @@ public class TableManager extends Producer<TableEvent, TableEventParameters> imp
 
                                     try {
                                         // Avoid calling listener immediately after the listener completes to create the current table.
-                                        // FIXME: https://issues.apache.org/jira/browse/IGNITE-16369
+                                        // FIXME: <MUTED> https://issues.apache.org/jira/browse/IGNITE-16369
                                         if (ctx.storageRevision() == assignmentsCtx.storageRevision()) {
                                             return CompletableFuture.completedFuture(null);
                                         } else {
